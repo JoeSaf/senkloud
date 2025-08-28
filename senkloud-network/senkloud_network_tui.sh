@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # hotspot-manager.sh — TUI to manage your offline Wi-Fi AP
+# Auto-detects USB Wi-Fi with AP support if saved interface missing
 
 set -euo pipefail
 
@@ -12,12 +13,7 @@ LOG_DNSMASQ="/var/log/offline-ap-dnsmasq.log"
 LEASES="/var/lib/misc/dnsmasq.offline-ap.leases"
 IPTABLES_TAG="OFFLINE_AP_RULES"
 
-need_root() {
-  if [[ $EUID -ne 0 ]]; then
-    echo "Please run as root: sudo $0"
-    exit 1
-  fi
-}
+need_root() { [[ $EUID -eq 0 ]] || { echo "Please run as root: sudo $0"; exit 1; }; }
 
 require_files() {
   for f in "$ENV_FILE" "$HOSTAPD_CFG" "$DNSMASQ_CFG"; do
@@ -25,9 +21,39 @@ require_files() {
   done
 }
 
+pick_ap_iface() {
+    local ifaces iface phyname ap_iface
+
+    ifaces=$(iw dev | awk '/Interface/ {print $2}')
+    [[ -n "$ifaces" ]] || { echo "No Wi-Fi interfaces found"; exit 1; }
+
+    for iface in $ifaces; do
+        phyname=$(iw dev "$iface" info | awk '/wiphy/ {print $2}')
+        if iw phy phy"$phyname" info | grep -q 'AP'; then
+            # Prefer USB first
+            if udevadm info /sys/class/net/$iface 2>/dev/null | grep -q "ID_BUS=usb"; then
+                ap_iface="$iface"
+                break
+            elif [[ -z "$ap_iface" ]]; then
+                ap_iface="$iface"
+            fi
+        fi
+    done
+
+    [[ -n "$ap_iface" ]] || { echo "No AP-capable Wi-Fi interfaces found"; exit 1; }
+    echo "$ap_iface"
+}
+
 load_env() {
   # shellcheck disable=SC1090
   source "$ENV_FILE"
+
+  # fallback if saved interface not present
+  if ! ip link show "$WIFI_IFACE" >/dev/null 2>&1; then
+      echo "Saved Wi-Fi interface $WIFI_IFACE not found, auto-detecting..."
+      WIFI_IFACE=$(pick_ap_iface)
+      echo "Using $WIFI_IFACE"
+  fi
 }
 
 save_env() {
@@ -50,24 +76,16 @@ EOF
   chmod 600 "$ENV_FILE"
 }
 
-nm_manage() {
-  # $1 = yes|no
-  if command -v nmcli >/dev/null 2>&1; then
-    nmcli dev set "$WIFI_IFACE" managed "$1" || true
-  fi
-}
+nm_manage() { [[ -x "$(command -v nmcli)" ]] && nmcli dev set "$WIFI_IFACE" managed "$1" || true; }
 
 kill_if_running() {
   local pidfile="$1"
-  if [[ -f "$pidfile" ]]; then
-    local pid
-    pid=$(cat "$pidfile" 2>/dev/null || echo "")
-    if [[ -n "${pid}" ]] && kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" || true
-      sleep 0.5
-    fi
-    rm -f "$pidfile"
-  fi
+  [[ -f "$pidfile" ]] || return
+  local pid
+  pid=$(cat "$pidfile" 2>/dev/null || echo "")
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && kill "$pid" || true
+  rm -f "$pidfile"
+  sleep 0.5
 }
 
 apply_ip_setup() {
@@ -79,9 +97,8 @@ apply_ip_setup() {
 
 start_dnsmasq() {
   mkdir -p "$RUN_DIR"
-  # log to file, keep foreground but background via & to capture PID easily
-  dnsmasq --conf-file="$DNSMASQ_CFG" --keep-in-foreground --log-facility="$LOG_DNSMASQ" \
-    & echo $! > "$RUN_DIR/dnsmasq.pid"
+  dnsmasq --conf-file="$DNSMASQ_CFG" --keep-in-foreground --log-facility="$LOG_DNSMASQ" &
+  echo $! > "$RUN_DIR/dnsmasq.pid"
 }
 
 start_hostapd() {
@@ -94,15 +111,15 @@ stop_hostapd() { kill_if_running "$RUN_DIR/hostapd.pid"; }
 iptables_add() {
   local up="$UPSTREAM_IFACE"
   [[ -n "$up" ]] || return 0
-  # Avoid duplicates
-  iptables -t nat -C POSTROUTING -o "$up" -m comment --comment "$IPTABLES_TAG" -j MASQUERADE 2>/dev/null || \
-  iptables -t nat -A POSTROUTING -o "$up" -m comment --comment "$IPTABLES_TAG" -j MASQUERADE
 
-  iptables -C FORWARD -i "$WIFI_IFACE" -o "$up" -m comment --comment "$IPTABLES_TAG" -j ACCEPT 2>/dev/null || \
-  iptables -A FORWARD -i "$WIFI_IFACE" -o "$up" -m comment --comment "$IPTABLES_TAG" -j ACCEPT
+  iptables -t nat -C POSTROUTING -o "$up" -m comment --comment "$IPTABLES_TAG" -j MASQUERADE 2>/dev/null \
+  || iptables -t nat -A POSTROUTING -o "$up" -m comment --comment "$IPTABLES_TAG" -j MASQUERADE
 
-  iptables -C FORWARD -i "$up" -o "$WIFI_IFACE" -m state --state RELATED,ESTABLISHED -m comment --comment "$IPTABLES_TAG" -j ACCEPT 2>/dev/null || \
-  iptables -A FORWARD -i "$up" -o "$WIFI_IFACE" -m state --state RELATED,ESTABLISHED -m comment --comment "$IPTABLES_TAG" -j ACCEPT
+  iptables -C FORWARD -i "$WIFI_IFACE" -o "$up" -m comment --comment "$IPTABLES_TAG" -j ACCEPT 2>/dev/null \
+  || iptables -A FORWARD -i "$WIFI_IFACE" -o "$up" -m comment --comment "$IPTABLES_TAG" -j ACCEPT
+
+  iptables -C FORWARD -i "$up" -o "$WIFI_IFACE" -m state --state RELATED,ESTABLISHED -m comment --comment "$IPTABLES_TAG" -j ACCEPT 2>/dev/null \
+  || iptables -A FORWARD -i "$up" -o "$WIFI_IFACE" -m state --state RELATED,ESTABLISHED -m comment --comment "$IPTABLES_TAG" -j ACCEPT
 
   sysctl -w net.ipv4.ip_forward=1 >/dev/null
 }
@@ -110,7 +127,7 @@ iptables_add() {
 iptables_del() {
   local up="$UPSTREAM_IFACE"
   [[ -n "$up" ]] || return 0
-  # Delete rules if present
+
   iptables -t nat -D POSTROUTING -o "$up" -m comment --comment "$IPTABLES_TAG" -j MASQUERADE 2>/dev/null || true
   iptables -D FORWARD -i "$WIFI_IFACE" -o "$up" -m comment --comment "$IPTABLES_TAG" -j ACCEPT 2>/dev/null || true
   iptables -D FORWARD -i "$up" -o "$WIFI_IFACE" -m state --state RELATED,ESTABLISHED -m comment --comment "$IPTABLES_TAG" -j ACCEPT 2>/dev/null || true
@@ -122,14 +139,10 @@ restart_running_ap() {
   apply_ip_setup
   start_dnsmasq
   start_hostapd
-  if [[ "${NAT_ENABLED:-0}" == "1" && -n "${UPSTREAM_IFACE:-}" ]]; then
-    iptables_add
-  fi
+  [[ "${NAT_ENABLED:-0}" == "1" && -n "${UPSTREAM_IFACE:-}" ]] && iptables_add
 }
 
-ap_running() {
-  [[ -f "$RUN_DIR/hostapd.pid" ]] && kill -0 "$(cat "$RUN_DIR/hostapd.pid" 2>/dev/null)" 2>/dev/null
-}
+ap_running() { [[ -f "$RUN_DIR/hostapd.pid" ]] && kill -0 "$(cat "$RUN_DIR/hostapd.pid" 2>/dev/null)" 2>/dev/null; }
 
 menu() {
   whiptail --title "Offline Hotspot Manager" --menu "Choose an action" 20 70 10 \
@@ -147,29 +160,25 @@ menu() {
 
 start_hotspot() {
   nm_manage no
-  # Kill wpa_supplicant on this iface if bound
   pkill -f "wpa_supplicant.*$WIFI_IFACE" 2>/dev/null || true
   apply_ip_setup
   start_dnsmasq
   start_hostapd
-  if [[ "${NAT_ENABLED:-0}" == "1" && -n "${UPSTREAM_IFACE:-}" ]]; then
-    iptables_add
-  fi
+  [[ "${NAT_ENABLED:-0}" == "1" && -n "${UPSTREAM_IFACE:-}" ]] && iptables_add
   whiptail --msgbox "Hotspot started:\nSSID: $SSID\nIP: $AP_IP\nInterface: $WIFI_IFACE" 10 60
 }
 
 stop_hotspot() {
-  stop_hostapd || true
-  stop_dnsmasq || true
-  iptables_del || true
+  stop_hostapd
+  stop_dnsmasq
+  iptables_del
   nm_manage yes
   whiptail --msgbox "Hotspot stopped and interface returned to NetworkManager." 8 60
 }
 
 status_hotspot() {
-  local running="NO"
+  local running="NO" ip line
   ap_running && running="YES"
-  local ip line
   ip=$(ip -4 addr show "$WIFI_IFACE" | awk '/inet /{print $2}' | head -n1)
   line="Running: $running
 Interface: $WIFI_IFACE
@@ -187,25 +196,16 @@ Logs:
 show_clients() {
   local tmp="/tmp/offline-ap-clients.$$"
   {
-    echo "== Associated Wi-Fi Stations (iw) =="
-    if command -v iw >/dev/null 2>&1; then
-      iw dev "$WIFI_IFACE" station dump | awk '
-        /^Station/ {mac=$2; print "\nMAC: "mac}
-        /signal:/ {print "  " $0}
-        /tx bitrate:/ {print "  " $0}
-        /rx bitrate:/ {print "  " $0}
-      '
-    else
-      echo "(iw not found)"
-    fi
+    echo "== Associated Wi-Fi Stations =="
+    command -v iw >/dev/null 2>&1 && iw dev "$WIFI_IFACE" station dump | awk '
+      /^Station/ {mac=$2; print "\nMAC: "mac}
+      /signal:/ {print "  " $0}
+      /tx bitrate:/ {print "  " $0}
+      /rx bitrate:/ {print "  " $0}
+    ' || echo "(iw not found)"
     echo
-    echo "== DHCP Leases (dnsmasq) =="
-    if [[ -f "$LEASES" ]]; then
-      # Format: <expiry> <mac> <ip> <hostname> <client-id>
-      awk '{printf "%-15s  %-17s  %-15s  %s\n", strftime("%Y-%m-%d %H:%M:%S",$1), $2, $3, ($4== "*" ? "-" : $4)}' "$LEASES"
-    else
-      echo "(no leases file yet)"
-    fi
+    echo "== DHCP Leases =="
+    [[ -f "$LEASES" ]] && awk '{printf "%-15s  %-17s  %-15s  %s\n", strftime("%Y-%m-%d %H:%M:%S",$1), $2, $3, ($4=="*"?"-":$4)}' "$LEASES" || echo "(no leases yet)"
   } > "$tmp"
   whiptail --title "Connected Clients" --textbox "$tmp" 25 80
   rm -f "$tmp"
@@ -213,66 +213,45 @@ show_clients() {
 
 change_ssid_pass() {
   local new_ssid new_pass
-  new_ssid=$(whiptail --inputbox "Enter new SSID" 10 60 "$SSID" 3>&1 1>&2 2>&3) || return 0
+  new_ssid=$(whiptail --inputbox "Enter new SSID" 10 60 "$SSID" 3>&1 1>&2 2>&3) || return
   while true; do
-    new_pass=$(whiptail --passwordbox "Enter new WPA2 password (8–63 chars)" 10 60 3>&1 1>&2 2>&3) || return 0
+    new_pass=$(whiptail --passwordbox "Enter new WPA2 password (8–63 chars)" 10 60 3>&1 1>&2 2>&3) || return
     [[ ${#new_pass} -ge 8 && ${#new_pass} -le 63 ]] && break
     whiptail --msgbox "Invalid password length." 8 40
   done
-  SSID="$new_ssid"
-  PASSPHRASE="$new_pass"
-  # Update hostapd config
+  SSID="$new_ssid"; PASSPHRASE="$new_pass"
   sed -i "s/^ssid=.*/ssid=$SSID/" "$HOSTAPD_CFG"
   sed -i "s/^wpa_passphrase=.*/wpa_passphrase=$PASSPHRASE/" "$HOSTAPD_CFG"
   save_env
-  if ap_running; then
-    restart_running_ap
-    whiptail --msgbox "SSID/password updated and hotspot restarted." 8 50
-  else
-    whiptail --msgbox "SSID/password updated. Start the hotspot to apply." 8 60
-  fi
+  ap_running && restart_running_ap && whiptail --msgbox "SSID/password updated and hotspot restarted." 8 50
 }
 
 change_channel() {
   local new_channel
-  new_channel=$(whiptail --inputbox "Wi-Fi channel (1–11 for 2.4GHz)" 10 60 "$CHANNEL" 3>&1 1>&2 2>&3) || return 0
-  [[ -z "$new_channel" ]] && return 0
+  new_channel=$(whiptail --inputbox "Wi-Fi channel (1–11 for 2.4GHz)" 10 60 "$CHANNEL" 3>&1 1>&2 2>&3) || return
+  [[ -z "$new_channel" ]] && return
   CHANNEL="$new_channel"
   sed -i "s/^channel=.*/channel=$CHANNEL/" "$HOSTAPD_CFG"
   save_env
-  if ap_running; then
-    restart_running_ap
-    whiptail --msgbox "Channel updated and hotspot restarted." 8 50
-  else
-    whiptail --msgbox "Channel updated. Start the hotspot to apply." 8 60
-  fi
+  ap_running && restart_running_ap && whiptail --msgbox "Channel updated and hotspot restarted." 8 50
 }
 
 toggle_nat() {
   if [[ "${NAT_ENABLED:-0}" == "0" ]]; then
-    # Turn ON — pick upstream interface
     local ifs tmp="/tmp/offline-ap-ifaces.$$"
     ifs=$(ip -o link show | awk -F': ' '{print $2}' | grep -v "^lo$" | grep -v "^${WIFI_IFACE}$" || true)
-    if [[ -z "$ifs" ]]; then
-      whiptail --msgbox "No other interfaces found to share internet from." 8 60
-      return 0
-    fi
+    [[ -z "$ifs" ]] && { whiptail --msgbox "No other interfaces found to share internet from." 8 60; return; }
     printf "%s\n" $ifs | nl -w1 -s": " > "$tmp"
     local choice
-    choice=$(whiptail --inputbox "Enter upstream interface to share internet from (e.g., eth0, wlan1, usb0):\n\n$(cat "$tmp")" 20 70 3>&1 1>&2 2>&3) || { rm -f "$tmp"; return 0; }
+    choice=$(whiptail --inputbox "Enter upstream interface to share internet from (e.g., eth0, wlan1, usb0):\n\n$(cat "$tmp")" 20 70 3>&1 1>&2 2>&3) || { rm -f "$tmp"; return; }
     rm -f "$tmp"
-    if [[ -z "$choice" ]]; then return 0; fi
-    UPSTREAM_IFACE="$choice"
-    NAT_ENABLED="1"
-    save_env
-    if ap_running; then iptables_add; fi
+    [[ -z "$choice" ]] && return
+    UPSTREAM_IFACE="$choice"; NAT_ENABLED="1"; save_env
+    ap_running && iptables_add
     whiptail --msgbox "NAT enabled via $UPSTREAM_IFACE." 8 40
   else
-    # Turn OFF
-    if ap_running; then iptables_del; fi
-    NAT_ENABLED="0"
-    UPSTREAM_IFACE=""
-    save_env
+    ap_running && iptables_del
+    NAT_ENABLED="0"; UPSTREAM_IFACE=""; save_env
     whiptail --msgbox "NAT disabled." 8 30
   fi
 }
@@ -280,11 +259,8 @@ toggle_nat() {
 view_logs() {
   local tmp="/tmp/offline-ap-logs.$$"
   {
-    echo "==== hostapd (last 100 lines) ===="
-    [[ -f "$LOG_HOSTAPD" ]] && tail -n 100 "$LOG_HOSTAPD" || echo "(no log yet)"
-    echo
-    echo "==== dnsmasq (last 100 lines) ===="
-    [[ -f "$LOG_DNSMASQ" ]] && tail -n 100 "$LOG_DNSMASQ" || echo "(no log yet)"
+    echo "==== hostapd (last 100 lines) ===="; [[ -f "$LOG_HOSTAPD" ]] && tail -n 100 "$LOG_HOSTAPD" || echo "(no log yet)"; echo
+    echo "==== dnsmasq (last 100 lines) ===="; [[ -f "$LOG_DNSMASQ" ]] && tail -n 100 "$LOG_DNSMASQ" || echo "(no log yet)"
   } > "$tmp"
   whiptail --title "Logs" --textbox "$tmp" 25 90
   rm -f "$tmp"
@@ -325,4 +301,3 @@ main() {
 }
 
 main "$@"
-
