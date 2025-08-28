@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: always
+    ports:
+      - "8096:8096"
+    volumes:
+      - jellyfin_config:/config
+      - jellyfin_cache:/cache
+      - /mnt/media:/media:ro
+    environment:
+      - JELLYFIN_PublishedServerUrl=http://localhost:8096
+    networks:
+      - media_network
+
+  flask-media-manager:
+    build: 
+      context: ./senkloud-backend
+      dockerfile: Dockerfile
+    container_name: flask-media-manager
+    restart: always
+    user: "0:0"                # RUN AS ROOT FOR PERMISSIONS
+    ports:
+      - "5000:5000"
+    volumes:
+      - /mnt/media:/mnt/media
+      - flask_data:/app/data
+      - flask_thumbnails:/app/static/thumbnails
+    environment:
+      - SECRET_KEY=local-media-server-secret-key-2024
+      - JELLYFIN_URL=http://jellyfin:8096
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - jellyfin
+    networks:
+      - media_network
+    command: python app.py      # RUN FLASK DEV SERVER
+
+  senkloud-frontend:
+    build:
+      context: ./senkloud-frontend
+      dockerfile: Dockerfile
+    container_name: senkloud-frontend
+    restart: always
+    ports:
+      - "8080:8080"
+    networks:
+      - media_network
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - flask-media-manager
+
+volumes:
+  jellyfin_config:
+  jellyfin_cache:
+  flask_data:
+  flask_thumbnails:
+
+networks:
+  media_network:
+    driver: bridge
