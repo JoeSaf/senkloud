@@ -10,7 +10,7 @@ need_root() {
 
 install_packages_nixos() {
   echo "[*] Installing required packages via nix-env..."
-  for pkg in hostapd dnsmasq iw iproute2 iptables whiptail; do
+  for pkg in hostapd dnsmasq iw iproute2 iptables ; do
     if ! command -v "$pkg" >/dev/null 2>&1; then
       nix-env -iA "nixos.$pkg"
     fi

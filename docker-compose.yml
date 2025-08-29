@@ -51,7 +51,7 @@ services:
     networks:
       - media_network
     environment:
-      - NODE_ENV=production
+      - VITE_API_URL=http://localhost:5000
     depends_on:
       - flask-media-manager
 
