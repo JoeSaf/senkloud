@@ -1096,13 +1096,27 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form.get('username') or request.json.get('username')
-        password = request.form.get('password') or request.json.get('password')
+        # Handle both JSON and form data
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username')
+            password = data.get('password')
+        else:
+            username = request.form.get('username')
+            password = request.form.get('password')
         
         print(f"Login attempt for user: {username}")
         print(f"Request IP: {request.remote_addr}")
         print(f"Content-Type: {request.headers.get('Content-Type')}")
-        print(f"Origin: {request.headers.get('Origin', 'No Origin')}")
+        print(f"Is JSON: {request.is_json}")
+        
+        if not username or not password:
+            error_msg = 'Username and password are required'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error_msg}), 400
+            else:
+                flash(error_msg)
+                return render_template('login.html')
         
         user = user_manager.verify_password(username, password)
         if user:
@@ -1121,11 +1135,9 @@ def login():
             session['is_admin'] = user.is_admin
             
             print(f"Login successful for {username}")
-            print(f"Session ID: {session.get('_id', 'No session ID')}")
             
-            # Handle API requests (React frontend)
-            if (request.headers.get('Content-Type') == 'application/json' or 
-                request.headers.get('Accept') and 'application/json' in request.headers.get('Accept')):
+            # Handle JSON requests (React frontend)
+            if request.is_json:
                 return jsonify({
                     'success': True,
                     'user': {
@@ -1141,21 +1153,19 @@ def login():
                 return redirect(next_page) if next_page else redirect(url_for('gallery'))
         else:
             print(f"Login failed for {username} - invalid credentials")
+            error_msg = 'Invalid username or password'
             
-            # Handle API requests
-            if (request.headers.get('Content-Type') == 'application/json' or 
-                request.headers.get('Accept') and 'application/json' in request.headers.get('Accept')):
-                return jsonify({
-                    'success': False,
-                    'error': 'Invalid username or password'
-                }), 401
+            # Handle JSON requests
+            if request.is_json:
+                return jsonify({'success': False, 'error': error_msg}), 401
             
             # Handle template requests
             else:
-                flash('Invalid username or password')
+                flash(error_msg)
     
     # Always render template for GET requests
     return render_template('login.html')
+
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -1205,20 +1215,52 @@ def api_login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        confirm_password = request.form['confirm_password']
+        # Handle both JSON and form data
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username')
+            password = data.get('password')
+            confirm_password = data.get('confirm_password')
+        else:
+            username = request.form.get('username')
+            password = request.form.get('password')
+            confirm_password = request.form.get('confirm_password')
+        
+        if not username or not password:
+            error_msg = 'Username and password are required'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error_msg}), 400
+            else:
+                flash(error_msg)
+                return render_template('register.html')
         
         if password != confirm_password:
-            flash('Passwords do not match')
+            error_msg = 'Passwords do not match'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error_msg}), 400
+            else:
+                flash(error_msg)
         elif user_manager.get_user_by_username(username):
-            flash('Username already exists')
+            error_msg = 'Username already exists'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error_msg}), 409
+            else:
+                flash(error_msg)
         elif len(password) < 6:
-            flash('Password must be at least 6 characters long')
+            error_msg = 'Password must be at least 6 characters long'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error_msg}), 400
+            else:
+                flash(error_msg)
         else:
             user_manager.create_user(username, password)
-            flash('Registration successful! Please log in.')
-            return redirect(url_for('login'))
+            success_msg = 'Registration successful! Please log in.'
+            if request.is_json:
+                return jsonify({'success': True, 'message': success_msg}), 201
+            else:
+                flash(success_msg)
+                return redirect(url_for('login'))
+    
     return render_template('register.html')
 
 
