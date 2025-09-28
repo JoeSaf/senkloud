@@ -2,7 +2,7 @@ services:
   jellyfin:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
-    restart: unless-stopped
+    restart: always
     ports:
       - "8096:8096"
     volumes:
@@ -15,13 +15,20 @@ services:
       - JELLYFIN_PublishedServerUrl=http://localhost:8096
     networks:
       - media_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   flask-media-manager:
     build: 
       context: ./senkloud-backend
       dockerfile: Dockerfile
     container_name: flask-media-manager
-    restart: unless-stopped
+    restart: always
+    user: "0:0"  # RUN AS ROOT FOR PERMISSIONS
     ports:
       - "5000:5000"
     volumes:
@@ -31,37 +38,53 @@ services:
       - flask_data:/app/data
       - flask_thumbnails:/app/static/thumbnails
     environment:
-      - SECRET_KEY=local-media-server-secret-key
+      - SECRET_KEY=local-media-server-secret-key-2024
       - JELLYFIN_URL=http://jellyfin:8096
       - JELLYFIN_API_KEY=  # Set this after configuring Jellyfin
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
     depends_on:
-      - jellyfin
+      jellyfin:
+        condition: service_healthy
     networks:
       - media_network
-    # Ensure media directories exist with correct permissions
+    # Use gunicorn instead of Flask dev server to prevent restart loop
     command: >
       bash -c "
-        mkdir -p /mnt/media/Pictures /mnt/media/Movies /mnt/media/Music &&
+        mkdir -p /mnt/media/Pictures /mnt/media/Movies /mnt/media/Music /mnt/media/Documents /mnt/media/Code /mnt/media/Archives &&
         chown -R 1000:1000 /mnt/media &&
-        python app.py
+        gunicorn -w 4 -b 0.0.0.0:5000 --timeout 300 --keep-alive 2 app:app
       "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   senkloud-frontend:
     build:
       context: ./senkloud-frontend
       dockerfile: Dockerfile
     container_name: senkloud-frontend
-    restart: unless-stopped
+    restart: always
     ports:
       - "8080:8080"
     networks:
       - media_network
     environment:
       - NODE_ENV=production
+      - VITE_API_URL=http://localhost:5000
+      - VITE_API_BASE_URL=http://localhost:5000
     depends_on:
-      - flask-media-manager
+      flask-media-manager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   jellyfin_config:
@@ -76,3 +99,6 @@ volumes:
 networks:
   media_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
