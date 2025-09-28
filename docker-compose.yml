@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -17,15 +15,10 @@ services:
       - JELLYFIN_PublishedServerUrl=http://localhost:8096
     networks:
       - media_network
-    # Optional: Hardware acceleration for transcoding
-    # devices:
-    #   - /dev/dri:/dev/dri # Intel GPU
-    # group_add:
-    #   - "109" # render group for GPU access
 
   flask-media-manager:
     build: 
-      context: .
+      context: ./senkloud-backend
       dockerfile: Dockerfile
     container_name: flask-media-manager
     restart: unless-stopped
@@ -54,6 +47,21 @@ services:
         chown -R 1000:1000 /mnt/media &&
         python app.py
       "
+
+  senkloud-frontend:
+    build:
+      context: ./senkloud-frontend
+      dockerfile: Dockerfile
+    container_name: senkloud-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - media_network
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - flask-media-manager
 
 volumes:
   jellyfin_config:
