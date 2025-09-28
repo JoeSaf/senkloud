@@ -41,7 +41,8 @@ services:
       - SECRET_KEY=local-media-server-secret-key-2024
       - JELLYFIN_URL=http://jellyfin:8096
       - JELLYFIN_API_KEY=  # Set this after configuring Jellyfin
-      - FLASK_ENV=production
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
       - PYTHONUNBUFFERED=1
     depends_on:
       - jellyfin
