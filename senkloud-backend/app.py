@@ -1563,6 +1563,101 @@ def api_upload_folder_thumbnail():
     except Exception as e:
         return jsonify({'error': f'Failed to process thumbnail: {str(e)}'}), 500
 
+@app.route('/api/upload', methods=['POST'])
+@login_required
+def api_upload_multiple():
+    """REST API endpoint for multiple file upload"""
+    if 'files' not in request.files:
+        return jsonify({'error': 'No files provided'}), 400
+    
+    files = request.files.getlist('files')
+    custom_folder = request.form.get('custom_folder', '').strip()
+    file_type_filter = request.form.get('file_type', '')
+    
+    if custom_folder:
+        custom_folder = sanitize_folder_path(custom_folder)
+        if not custom_folder:
+            return jsonify({'error': 'Invalid folder path'}), 400
+    
+    uploaded_files = []
+    errors = []
+    
+    for file in files:
+        if file.filename == '':
+            continue
+        
+        is_allowed, file_type = allowed_file(file.filename)
+        if not is_allowed:
+            errors.append(f'File type not allowed: {file.filename}')
+            continue
+        
+        if file_type_filter and file_type != file_type_filter:
+            errors.append(f'File {file.filename} does not match selected type filter ({file_type_filter})')
+            continue
+        
+        filename = secure_filename(file.filename)
+        if not filename:
+            continue
+        
+        media_dir = get_media_path(file_type)
+        
+        if custom_folder:
+            media_dir = os.path.join(media_dir, custom_folder)
+        
+        ensure_directory(media_dir)
+        
+        file_path = os.path.join(media_dir, filename)
+        if os.path.exists(file_path):
+            name, ext = os.path.splitext(filename)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{name}_{timestamp}{ext}"
+            file_path = os.path.join(media_dir, filename)
+        
+        try:
+            file.save(file_path)
+            
+            # Validate file size
+            is_valid, error_msg = validate_file_size(file_path, file_type)
+            if not is_valid:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                errors.append(f'{filename}: {error_msg}')
+                continue
+            
+            # Generate thumbnail
+            thumbnails_dir = os.path.join(app.static_folder, 'thumbnails')
+            ensure_directory(thumbnails_dir)
+            thumbnail_filename = f"{hashlib.md5(file_path.encode()).hexdigest()}.jpg"
+            thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
+            
+            if file_type in ['image', 'video']:
+                generate_thumbnail(file_path, file_type, thumbnail_path)
+            
+            relative_path = os.path.join(custom_folder, filename) if custom_folder else filename
+            
+            uploaded_files.append({
+                'filename': filename,
+                'relative_path': relative_path,
+                'folder': custom_folder or 'Root',
+                'type': file_type,
+                'url': url_for('stream_file', filename=relative_path)
+            })
+            
+        except Exception as e:
+            errors.append(f'Error uploading {filename}: {str(e)}')
+            if os.path.exists(file_path):
+                os.remove(file_path)
+    
+    if uploaded_files:
+        refresh_jellyfin_library()
+    
+    return jsonify({
+        'success': len(uploaded_files) > 0,
+        'uploaded_files': uploaded_files,
+        'errors': errors,
+        'message': f'Successfully uploaded {len(uploaded_files)} file(s)'
+    })
+
 @app.route('/api/folder-thumbnail', methods=['DELETE'])
 @login_required
 def api_delete_folder_thumbnail():
@@ -2091,7 +2186,7 @@ def api_create_folder():
     if not folder_path or not file_type:
         return jsonify({'error': 'Folder path and file type are required'}), 400
     
-    if file_type not in ['image', 'video', 'audio']:
+    if file_type not in ['image', 'video', 'audio', 'document', 'code', 'archive']:
         return jsonify({'error': 'Invalid file type'}), 400
     
     folder_path = sanitize_folder_path(folder_path)
@@ -2107,6 +2202,7 @@ def api_create_folder():
     try:
         ensure_directory(full_folder_path)
         return jsonify({
+            'success': True,
             'message': f'Folder "{folder_path}" created successfully', 
             'folder_path': folder_path
         })

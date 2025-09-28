@@ -1,4 +1,4 @@
-// src/pages/Upload.tsx - Fixed and Complete Version
+// src/pages/Upload.tsx
 import React, { useState, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { 
@@ -169,51 +169,29 @@ const Upload: React.FC = () => {
         prev.map(f => f.id === fileData.id ? { ...f, status: 'uploading' as const, progress: 0 } : f)
       );
 
-      const formData = new FormData();
-      formData.append('files', fileData.file);
-      formData.append('file_type', selectedFileType);
-      if (selectedFolder && selectedFolder !== 'root') {
-        formData.append('custom_folder', selectedFolder);
-      }
-
-      const xhr = new XMLHttpRequest();
-      
-      return new Promise((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            const progress = Math.round((e.loaded / e.total) * 100);
-            setUploadedFiles(prev => 
-              prev.map(f => f.id === fileData.id ? { ...f, progress } : f)
-            );
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status === 200) {
-            setUploadedFiles(prev => 
-              prev.map(f => f.id === fileData.id ? { ...f, status: 'completed' as const, progress: 100 } : f)
-            );
-            resolve(true);
-          } else {
-            const errorMessage = `Upload failed: ${xhr.status}`;
-            setUploadedFiles(prev => 
-              prev.map(f => f.id === fileData.id ? { ...f, status: 'error' as const, error: errorMessage } : f)
-            );
-            reject(new Error(errorMessage));
-          }
-        });
-
-        xhr.addEventListener('error', () => {
-          const errorMessage = 'Network error occurred';
+      // Use the apiService which correctly formats the request
+      const response = await apiService.uploadFile(
+        fileData.file,
+        selectedFolder === 'root' || selectedFolder === '' ? undefined : selectedFolder,
+        (progress) => {
           setUploadedFiles(prev => 
-            prev.map(f => f.id === fileData.id ? { ...f, status: 'error' as const, error: errorMessage } : f)
+            prev.map(f => f.id === fileData.id ? { ...f, progress } : f)
           );
-          reject(new Error(errorMessage));
-        });
+        }
+      );
 
-        xhr.open('POST', '/upload');
-        xhr.send(formData);
-      });
+      if (response.success) {
+        setUploadedFiles(prev => 
+          prev.map(f => f.id === fileData.id ? { ...f, status: 'completed' as const, progress: 100 } : f)
+        );
+        return true;
+      } else {
+        const errorMessage = response.error || 'Upload failed';
+        setUploadedFiles(prev => 
+          prev.map(f => f.id === fileData.id ? { ...f, status: 'error' as const, error: errorMessage } : f)
+        );
+        return false;
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setUploadedFiles(prev => 
@@ -245,9 +223,10 @@ const Upload: React.FC = () => {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
 
+      const successCount = uploadedFiles.filter(f => f.status === 'completed').length;
       toast({
         title: "Success",
-        description: `Uploaded ${pendingFiles.length} file(s) successfully`,
+        description: `Uploaded ${successCount} file(s) successfully`,
       });
     } catch (error) {
       toast({
@@ -271,16 +250,9 @@ const Upload: React.FC = () => {
     }
 
     try {
-      const formData = new FormData();
-      formData.append('folder_path', newFolderName.trim());
-      formData.append('file_type', selectedFileType);
-
-      const response = await fetch('/create_folder', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
+      const response = await apiService.createFolder(newFolderName.trim(), selectedFileType);
+      
+      if (response.success) {
         toast({
           title: "Success",
           description: `Folder "${newFolderName}" created successfully`,
@@ -289,7 +261,7 @@ const Upload: React.FC = () => {
         setIsCreateFolderOpen(false);
         refetchFolders();
       } else {
-        throw new Error('Failed to create folder');
+        throw new Error(response.error || 'Failed to create folder');
       }
     } catch (error) {
       toast({

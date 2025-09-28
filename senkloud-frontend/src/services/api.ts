@@ -229,8 +229,9 @@ class ApiService {
     onProgress?: (progress: number) => void
   ): Promise<ApiResponse> {
     const formData = new FormData();
-    formData.append('file', file);
-    if (folder) formData.append('folder', folder);
+    formData.append('files', file); // Backend expects 'files'
+    formData.append('file_type', this.getFileCategory(file.name)); // Pass filename string, not File object
+    if (folder) formData.append('custom_folder', folder);
 
     return new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
@@ -244,7 +245,6 @@ class ApiService {
 
       xhr.addEventListener('load', () => {
         try {
-          // Handle empty response
           if (!xhr.responseText) {
             resolve({
               success: false,
