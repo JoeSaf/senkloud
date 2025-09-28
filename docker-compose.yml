@@ -44,23 +44,16 @@ services:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
     depends_on:
-      jellyfin:
-        condition: service_healthy
+      - jellyfin
     networks:
       - media_network
-    # Use gunicorn instead of Flask dev server to prevent restart loop
+    # Use Flask dev server with proper directory setup
     command: >
       bash -c "
         mkdir -p /mnt/media/Pictures /mnt/media/Movies /mnt/media/Music /mnt/media/Documents /mnt/media/Code /mnt/media/Archives &&
         chown -R 1000:1000 /mnt/media &&
-        gunicorn -w 4 -b 0.0.0.0:5000 --timeout 300 --keep-alive 2 app:app
+        python app.py
       "
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   senkloud-frontend:
     build:
@@ -77,14 +70,7 @@ services:
       - VITE_API_URL=http://localhost:5000
       - VITE_API_BASE_URL=http://localhost:5000
     depends_on:
-      flask-media-manager:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      - flask-media-manager
 
 volumes:
   jellyfin_config:
