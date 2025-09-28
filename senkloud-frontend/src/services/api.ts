@@ -45,7 +45,7 @@ class ApiService {
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
     
     if (isLocalhost) {
-      this.baseUrl = import.meta.env.VITE_API_URL || 'http://flask-media-manager:5000';
+      this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
     } else {
       // For network access, use the current hostname with port 5000
       this.baseUrl = `http://${hostname}:5000`;

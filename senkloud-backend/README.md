@@ -1,7 +1,14 @@
-# senkloud
+# sencloud
+
+- setting up
+```
+npm i
+
+```
 
 - running
 
 ```
-python app.py
+npm start dev
+
 ```

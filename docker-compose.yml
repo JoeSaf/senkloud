@@ -1,66 +1,69 @@
-version: "3.9"
+version: '3.8'
 
 services:
   jellyfin:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
-    restart: always
+    restart: unless-stopped
     ports:
       - "8096:8096"
     volumes:
+      # Jellyfin config and cache
       - jellyfin_config:/config
       - jellyfin_cache:/cache
+      # Media directories - mapped to the same structure as Flask app
       - /mnt/media:/media:ro
     environment:
       - JELLYFIN_PublishedServerUrl=http://localhost:8096
     networks:
       - media_network
+    # Optional: Hardware acceleration for transcoding
+    # devices:
+    #   - /dev/dri:/dev/dri # Intel GPU
+    # group_add:
+    #   - "109" # render group for GPU access
 
   flask-media-manager:
     build: 
-      context: ./senkloud-backend
+      context: .
       dockerfile: Dockerfile
     container_name: flask-media-manager
-    restart: always
-    user: "0:0"                # RUN AS ROOT FOR PERMISSIONS
+    restart: unless-stopped
     ports:
       - "5000:5000"
     volumes:
+      # Media directory with write access
       - /mnt/media:/mnt/media
+      # Persistent storage for user data and thumbnails
       - flask_data:/app/data
       - flask_thumbnails:/app/static/thumbnails
     environment:
-      - SECRET_KEY=local-media-server-secret-key-2024
+      - SECRET_KEY=local-media-server-secret-key
       - JELLYFIN_URL=http://jellyfin:8096
+      - JELLYFIN_API_KEY=  # Set this after configuring Jellyfin
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
     depends_on:
       - jellyfin
     networks:
       - media_network
-    command: python app.py      # RUN FLASK DEV SERVER
-
-  senkloud-frontend:
-    build:
-      context: ./senkloud-frontend
-      dockerfile: Dockerfile
-    container_name: senkloud-frontend
-    restart: always
-    ports:
-      - "8080:8080"
-    networks:
-      - media_network
-    environment:
-      - VITE_API_URL=http://localhost:5000
-    depends_on:
-      - flask-media-manager
+    # Ensure media directories exist with correct permissions
+    command: >
+      bash -c "
+        mkdir -p /mnt/media/Pictures /mnt/media/Movies /mnt/media/Music &&
+        chown -R 1000:1000 /mnt/media &&
+        python app.py
+      "
 
 volumes:
   jellyfin_config:
+    driver: local
   jellyfin_cache:
+    driver: local
   flask_data:
+    driver: local
   flask_thumbnails:
-
+    driver: local
 
 networks:
   media_network:

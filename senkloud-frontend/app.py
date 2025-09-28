@@ -100,7 +100,7 @@ login_manager.login_message = 'Please log in to access this page.'
 
 # User model
 class User(UserMixin):
-    def __init__(self, id, username, password_hash, is_admin=False):
+    def __init__(self, id, username, password_hash, is_s=False):
         self.id = id
         self.username = username
         self.password_hash = password_hash
