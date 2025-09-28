@@ -13,14 +13,6 @@ services:
       - /mnt/media:/media:ro
     environment:
       - JELLYFIN_PublishedServerUrl=http://localhost:8096
-    networks:
-      - media_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
   flask-media-manager:
     build: 
@@ -46,8 +38,6 @@ services:
       - PYTHONUNBUFFERED=1
     depends_on:
       - jellyfin
-    networks:
-      - media_network
     # Use Flask dev server with proper directory setup
     command: >
       bash -c "
@@ -64,14 +54,13 @@ services:
     restart: always
     ports:
       - "8080:8080"
-    networks:
-      - media_network
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - VITE_API_URL=http://localhost:5000
       - VITE_API_BASE_URL=http://localhost:5000
     depends_on:
       - flask-media-manager
+    command: npm run dev -- --host 0.0.0.0 --port 8080
 
 volumes:
   jellyfin_config:
@@ -82,10 +71,3 @@ volumes:
     driver: local
   flask_thumbnails:
     driver: local
-
-networks:
-  media_network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
