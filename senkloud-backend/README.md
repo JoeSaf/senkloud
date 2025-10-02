@@ -1,14 +1,22 @@
-# sencloud
+# I dont know why your here in this dir, but just know the docker-compose in the root dir should properly build for you everything
 
-- setting up
+## senkloud-backend
+- setup a python virtual environment
+```python
+python -m venv senkloud-backend
 ```
-npm i
 
+- remember to setup the whole backend dir into a virtual environment
+
+- install the dependencies
+```
+pip install -r requirements.txt
 ```
 
-- running
-
+- start the server
 ```
-npm start dev
-
+python app.py
 ```
+
+
+# NB: only use this for development purposes, use the docker build for deployment

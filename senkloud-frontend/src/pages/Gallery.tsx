@@ -1,11 +1,14 @@
-// src/pages/Gallery.tsx - Complete Enhanced Version
+// src/pages/Gallery.tsx - Complete Enhanced Version with Watch History
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import MediaCarousel from '../components/MediaCarousel';
 import MediaPlayer from '../components/MediaPlayer';
+import ContinueWatching from '../components/ContinueWatching';
+import DocumentViewer from '../components/DocumentViewer';
 import FolderThumbnailUpload from '../components/FolderThumbnailUpload';
 import { apiService, MediaFile } from '../services/api';
+import { watchHistoryService, WatchHistoryItem } from '../services/watchHistory';
 import { 
   Cloud, 
   Play, 
@@ -38,11 +41,11 @@ interface MediaItem {
   id: string;
   title: string;
   image: string;
+  url: string;
   duration?: string;
   year?: string;
   genre?: string;
   type?: string;
-  url?: string;
   folder?: string;
   size?: number;
   modified?: string;
@@ -58,10 +61,20 @@ const Gallery: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'size' | 'type'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [filterType, setFilterType] = useState<'all' | 'video' | 'audio' | 'image'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'video' | 'audio' | 'image' | 'document'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showThumbnailUpload, setShowThumbnailUpload] = useState(false);
   const [selectedDirectory, setSelectedDirectory] = useState<string>('');
+  
+  // Document viewer state
+  const [selectedDocument, setSelectedDocument] = useState<{
+    id: string;
+    title: string;
+    url: string;
+    type: string;
+  } | null>(null);
+  const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
+  
   const libraryRef = useRef<HTMLDivElement>(null);
 
   // Mobile detection and player navigation hook
@@ -166,7 +179,7 @@ const Gallery: React.FC = () => {
         : '/placeholder.svg'),
       duration: file.type === 'video' ? 'Unknown' : undefined,
       year: new Date(file.modified).getFullYear().toString(),
-      genre: file.type === 'video' ? 'Video' : file.type === 'audio' ? 'Audio' : 'Image',
+      genre: file.type === 'video' ? 'Video' : file.type === 'audio' ? 'Audio' : file.type === 'document' ? 'Document' : 'Image',
       type: file.type,
       url: apiService.getStreamUrl(file.relative_path),
       folder: file.folder || 'Root',
@@ -262,8 +275,36 @@ const Gallery: React.FC = () => {
     }
   }, [recentItems, featuredMedia]);
 
+  // Handle continue watching item selection
+  const handleContinueWatchingSelect = useCallback((item: WatchHistoryItem) => {
+    const mediaItem: MediaItem = {
+      id: item.id,
+      title: item.title,
+      image: item.image,
+      url: item.url,
+      type: item.type,
+      year: item.year,
+      folder: item.folder,
+      duration: watchHistoryService.formatTime(item.duration),
+    };
+    
+    openMediaPlayer(mediaItem);
+  }, [openMediaPlayer]);
+
   // Handle media item click
   const handleItemClick = useCallback((item: MediaItem) => {
+    // Handle document types
+    if (item.type === 'document') {
+      setSelectedDocument({
+        id: item.id,
+        title: item.title,
+        url: item.url || '',
+        type: item.type,
+      });
+      setIsDocumentViewerOpen(true);
+      return;
+    }
+
     // Fetch video info if it's a video
     if (item.type === 'video' && item.url) {
       fetchVideoInfo(item);
@@ -333,6 +374,7 @@ const Gallery: React.FC = () => {
       case 'video': return <Play className="w-4 h-4" />;
       case 'audio': return <span className="text-center text-sm">♫</span>;
       case 'image': return <span className="text-center text-sm">🖼</span>;
+      case 'document': return <span className="text-center text-sm">📄</span>;
       default: return <Eye className="w-4 h-4" />;
     }
   };
@@ -417,6 +459,12 @@ const Gallery: React.FC = () => {
       {/* Content Sections */}
       <div ref={libraryRef} className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         
+        {/* Continue Watching Section */}
+        <ContinueWatching
+          onMediaSelect={handleContinueWatchingSelect}
+          limit={10}
+        />
+
         {/* Controls Section */}
         <div className="mb-8">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
@@ -442,6 +490,7 @@ const Gallery: React.FC = () => {
                   <SelectItem value="video">Videos</SelectItem>
                   <SelectItem value="audio">Audio</SelectItem>
                   <SelectItem value="image">Images</SelectItem>
+                  <SelectItem value="document">Documents</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -741,14 +790,30 @@ const Gallery: React.FC = () => {
           setSelectedMedia(null);
         }}
         media={selectedMedia}
-        nextEpisode={null} // TODO: Implement episode navigation
-        onNextEpisode={() => {}} // TODO: Implement next episode handler
-        recommendedMedia={recentItems.slice(0, 6)}
+        episodeList={[]}
+        currentEpisodeIndex={0}
+        onEpisodeChange={() => {}}
+        recommendedMedia={recentItems.slice(0, 6).map(item => ({
+          id: item.id,
+          title: item.title,
+          image: item.image,
+          url: item.url || ''
+        }))}
         onRecommendedSelect={(media) => {
           setSelectedMedia(media);
           if (media.type === 'video' && media.url) {
             fetchVideoInfo(media);
           }
+        }}
+      />
+
+      {/* Document Viewer */}
+      <DocumentViewer
+        isOpen={isDocumentViewerOpen}
+        document={selectedDocument}
+        onClose={() => {
+          setIsDocumentViewerOpen(false);
+          setSelectedDocument(null);
         }}
       />
     </div>

@@ -1,5 +1,6 @@
-// src/components/MediaPlayer.tsx - Fixed Auto-Hide Controls & Cursor
+// src/components/MediaPlayer.tsx - Fixed Auto-Hide Controls & Cursor with Watch History
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { watchHistoryService } from '../services/watchHistory';
 import {
   Play,
   Pause,
@@ -29,6 +30,7 @@ interface MediaPlayerProps {
     type?: string;
     year?: string;
     duration?: string;
+    folder?: string;
   } | null;
   onClose: () => void;
   episodeList?: Array<{
@@ -76,6 +78,7 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({
   const [playbackRate, setPlaybackRate] = useState(1);
   const [imageZoom, setImageZoom] = useState(1);
   const [imageRotation, setImageRotation] = useState(0);
+  const [hasRestoredProgress, setHasRestoredProgress] = useState(false);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -262,6 +265,79 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({
     }
   }, []);
 
+  // ============================================
+  // WATCH HISTORY INTEGRATION - START
+  // ============================================
+
+  // Restore saved progress when media loads
+  useEffect(() => {
+    if (!media?.id || duration === 0 || hasRestoredProgress || !isVideo) return;
+
+    const savedProgress = watchHistoryService.getProgress(media.id);
+    
+    if (savedProgress && savedProgress.currentTime > 5) {
+      // Auto-resume without confirmation
+      const mediaElement = getCurrentMediaElement();
+      if (mediaElement) {
+        mediaElement.currentTime = savedProgress.currentTime;
+        setCurrentTime(savedProgress.currentTime);
+      }
+    }
+        
+    setHasRestoredProgress(true);
+  }, [media?.id, duration, hasRestoredProgress, isVideo, getCurrentMediaElement]);
+
+  // Save progress periodically while playing
+  useEffect(() => {
+    if (!media || !isPlaying || duration === 0 || !isVideo) return;
+
+    const saveInterval = setInterval(() => {
+      watchHistoryService.throttledSaveProgress({
+        id: media.id,
+        title: media.title,
+        url: media.url,
+        image: media.image,
+        type: media.type || 'video',
+        currentTime,
+        duration,
+        folder: media.folder,
+        year: media.year,
+      });
+    }, 5000); // Save every 5 seconds
+
+    return () => clearInterval(saveInterval);
+  }, [media, currentTime, duration, isPlaying, isVideo]);
+
+  // Save progress on unmount or when closing player
+  useEffect(() => {
+    return () => {
+      if (media && duration > 0 && currentTime > 0 && isVideo) {
+        watchHistoryService.saveProgress({
+          id: media.id,
+          title: media.title,
+          url: media.url,
+          image: media.image,
+          type: media.type || 'video',
+          currentTime,
+          duration,
+          folder: media.folder,
+          year: media.year,
+        });
+      }
+    };
+  }, [media, currentTime, duration, isVideo]);
+
+  // Reset progress tracking when media changes
+  useEffect(() => {
+    if (media?.id) {
+      setHasRestoredProgress(false);
+    }
+  }, [media?.id]);
+
+  // ============================================
+  // WATCH HISTORY INTEGRATION - END
+  // ============================================
+
   // Mobile fullscreen handling
   const enterMobileFullscreen = useCallback(async () => {
     if (!playerContainerRef.current) return;
@@ -305,7 +381,7 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({
         }
       } else {
         // iOS Safari fallback - try video element fullscreen
-        const videoElement = container.querySelector('video');
+        const videoElement = (container as HTMLElement).querySelector('video');
         if (videoElement && 'webkitRequestFullscreen' in videoElement) {
           try {
             await (videoElement as any).webkitRequestFullscreen();

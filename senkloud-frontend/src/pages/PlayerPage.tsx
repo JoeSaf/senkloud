@@ -1,6 +1,7 @@
-// src/pages/PlayerPage.tsx - Enhanced with Episode Navigation and True Fullscreen
+// src/pages/PlayerPage.tsx - Enhanced with Episode Navigation, True Fullscreen, and Watch History
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { watchHistoryService } from '../services/watchHistory';
 import { 
   X, 
   Play, 
@@ -55,6 +56,7 @@ const PlayerPage: React.FC = () => {
   const [isLandscape, setIsLandscape] = useState(false);
   const [autoplayNext, setAutoplayNext] = useState(true);
   const [showNextEpisode, setShowNextEpisode] = useState(false);
+  const [hasRestoredProgress, setHasRestoredProgress] = useState(false);
   
   // Episode navigation state
   const [nextEpisode, setNextEpisode] = useState<Episode | null>(null);
@@ -98,6 +100,80 @@ const PlayerPage: React.FC = () => {
       console.error('Error fetching episode data:', error);
     }
   }, [mediaUrl, mediaType]);
+
+  // ============================================
+  // WATCH HISTORY INTEGRATION - START
+  // ============================================
+
+  // Restore saved progress when media loads
+  useEffect(() => {
+    if (!mediaUrl || duration === 0 || hasRestoredProgress || mediaType !== 'video') return;
+
+    const savedProgress = watchHistoryService.getProgress(mediaUrl);
+    
+    if (savedProgress && savedProgress.currentTime > 5) {
+      const shouldResume = window.confirm(
+        `Resume from ${watchHistoryService.formatTime(savedProgress.currentTime)}?`
+      );
+      
+      if (shouldResume) {
+        const mediaElement = getCurrentMediaElement();
+        if (mediaElement) {
+          mediaElement.currentTime = savedProgress.currentTime;
+          setCurrentTime(savedProgress.currentTime);
+        }
+      }
+    }
+    
+    setHasRestoredProgress(true);
+  }, [mediaUrl, duration, hasRestoredProgress, mediaType, getCurrentMediaElement]);
+
+  // Save progress periodically while playing
+  useEffect(() => {
+    if (!mediaUrl || !isPlaying || duration === 0 || mediaType !== 'video') return;
+
+    const saveInterval = setInterval(() => {
+      watchHistoryService.throttledSaveProgress({
+        id: mediaUrl,
+        title: mediaTitle,
+        url: mediaUrl,
+        image: mediaPoster || '/placeholder.svg',
+        type: 'video',
+        currentTime,
+        duration,
+      });
+    }, 5000);
+
+    return () => clearInterval(saveInterval);
+  }, [mediaUrl, mediaTitle, mediaPoster, currentTime, duration, isPlaying, mediaType]);
+
+  // Save progress on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaUrl && duration > 0 && currentTime > 0 && mediaType === 'video') {
+        watchHistoryService.saveProgress({
+          id: mediaUrl,
+          title: mediaTitle,
+          url: mediaUrl,
+          image: mediaPoster || '/placeholder.svg',
+          type: 'video',
+          currentTime,
+          duration,
+        });
+      }
+    };
+  }, [mediaUrl, mediaTitle, mediaPoster, currentTime, duration, mediaType]);
+
+  // Reset progress tracking when media changes
+  useEffect(() => {
+    if (mediaUrl) {
+      setHasRestoredProgress(false);
+    }
+  }, [mediaUrl]);
+
+  // ============================================
+  // WATCH HISTORY INTEGRATION - END
+  // ============================================
 
   // Enhanced mobile fullscreen with true device fullscreen
   const enterTrueFullscreen = useCallback(async () => {
