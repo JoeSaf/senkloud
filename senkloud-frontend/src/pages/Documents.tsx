@@ -1,4 +1,4 @@
-// src/pages/Documents.tsx
+// src/pages/Documents.tsx - FIXED VERSION
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiService, MediaFile } from '../services/api';
@@ -36,6 +36,86 @@ interface DocumentItem {
   thumbnail?: string;
 }
 
+// FIXED: Comprehensive document extension detection
+const DOCUMENT_EXTENSIONS = [
+  // PDF
+  'pdf',
+  // Microsoft Office
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  // OpenOffice/LibreOffice
+  'odt', 'ods', 'odp',
+  // Text files
+  'txt', 'rtf', 'md', 'markdown',
+  // Other documents
+  'csv', 'xml', 'json', 'log'
+];
+
+const isDocumentFile = (file: MediaFile): boolean => {
+  const extension = file.filename.split('.').pop()?.toLowerCase() || '';
+  const mimeType = file.type?.toLowerCase() || '';
+  
+  // Check by extension first - more comprehensive list
+  const documentExtensions = [
+    // PDF
+    'pdf',
+    // Microsoft Office
+    'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pps', 'ppsx',
+    // OpenOffice/LibreOffice
+    'odt', 'ods', 'odp', 'odg', 'odf',
+    // Text files
+    'txt', 'rtf', 'md', 'markdown', 'tex',
+    // Other documents
+    'csv', 'xml', 'json', 'log', 'ini', 'cfg', 'conf',
+    // Apple iWork
+    'pages', 'numbers', 'key',
+    // eBooks
+    'epub', 'mobi', 'azw', 'ibooks'
+  ];
+  
+  if (documentExtensions.includes(extension)) {
+    return true;
+  }
+  
+  // Check by MIME type - more comprehensive
+  const documentMimePatterns = [
+    'document',
+    'pdf',
+    'text',
+    'msword',
+    'spreadsheet',
+    'presentation',
+    'opendocument',
+    'officedocument',
+    'wordprocessing',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.ms-excel',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats'
+  ];
+  
+  if (documentMimePatterns.some(pattern => mimeType.includes(pattern))) {
+    return true;
+  }
+  
+  // Fallback: Check filename patterns
+  const documentPatterns = [
+    /\.docx?$/i,
+    /\.xlsx?$/i,
+    /\.pptx?$/i,
+    /\.pdf$/i,
+    /\.txt$/i,
+    /\.rtf$/i,
+    /\.od[tsp]$/i
+  ];
+  
+  if (documentPatterns.some(pattern => pattern.test(file.filename))) {
+    return true;
+  }
+  
+  return false;
+};
+
 const Documents: React.FC = () => {
   const [selectedDocument, setSelectedDocument] = useState<{
     id: string;
@@ -49,15 +129,15 @@ const Documents: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch documents
+  // FIXED: Fetch ALL files and filter client-side
   const { 
-    data: documentsResponse, 
+    data: allFilesResponse, 
     isLoading, 
     error,
     refetch 
   } = useQuery({
-    queryKey: ['documents'],
-    queryFn: () => apiService.getFiles({ type: 'document' }),
+    queryKey: ['all-files-for-documents'],
+    queryFn: () => apiService.getFiles(), // Get ALL files, no type filter
     refetchOnWindowFocus: false,
   });
 
@@ -74,7 +154,7 @@ const Documents: React.FC = () => {
       id: file.relative_path,
       title: formattedTitle,
       url: apiService.getStreamUrl(file.relative_path),
-      type: file.type,
+      type: file.type || 'document',
       extension,
       size: file.size,
       modified: file.modified,
@@ -83,11 +163,23 @@ const Documents: React.FC = () => {
     };
   }, []);
 
-  // Process all documents
+  // FIXED: Filter documents client-side
   const allDocuments = useMemo(() => {
-    if (!documentsResponse?.success) return [];
-    return documentsResponse.data.map(transformDocument);
-  }, [documentsResponse, transformDocument]);
+    if (!allFilesResponse?.success) {
+      console.log('No files response');
+      return [];
+    }
+    
+    const allFiles = allFilesResponse.data || [];
+    console.log('Total files fetched:', allFiles.length);
+    
+    // Filter for documents
+    const documentFiles = allFiles.filter(isDocumentFile);
+    console.log('Document files found:', documentFiles.length);
+    console.log('Document files:', documentFiles.map(f => f.filename));
+    
+    return documentFiles.map(transformDocument);
+  }, [allFilesResponse, transformDocument]);
 
   // Filter and sort documents
   const filteredAndSortedDocuments = useMemo(() => {
@@ -186,6 +278,16 @@ const Documents: React.FC = () => {
     }
   };
 
+  // Debug output
+  console.log('Documents page state:', {
+    isLoading,
+    hasError: !!error,
+    totalDocuments: allDocuments.length,
+    filteredDocuments: filteredAndSortedDocuments.length,
+    searchQuery,
+    folders: Object.keys(documentsByFolder)
+  });
+
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -222,7 +324,7 @@ const Documents: React.FC = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground mb-2">Documents</h1>
           <p className="text-muted-foreground">
-            Browse and view your document collection
+            Browse and view your document collection ({allDocuments.length} documents found)
           </p>
         </div>
 
@@ -395,7 +497,7 @@ const Documents: React.FC = () => {
       {/* Document Viewer */}
       <DocumentViewer
         isOpen={isDocumentViewerOpen}
-        document={selectedDocument}
+        doc={selectedDocument}
         onClose={() => {
           setIsDocumentViewerOpen(false);
           setSelectedDocument(null);

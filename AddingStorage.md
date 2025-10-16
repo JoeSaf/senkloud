@@ -65,28 +65,29 @@ sudo chmod -R 777 /mnt/media2
 Add the following to your `/etc/nixos/configuration.nix` under `fileSystems`:
 
 ```nix
-fileSystems."/mnt/media2/movies" = {
-  device = "/dev/disk/by-label/senkloud_movies";
-  fsType = "btrfs";
-  options = [ "rw" "noatime" "compress=zstd" ];
-};
+  fileSystems."/mnt/media2/movies" = {
+    device = "/dev/disk/by-label/senkloud_movies";
+    fsType = "btrfs";
+    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-timeout=10s" ];
+  };
 
-fileSystems."/mnt/media2/photos" = {
-  device = "/dev/disk/by-label/senkloud_photos";
-  fsType = "btrfs";
-  options = [ "rw" "noatime" "compress=zstd" ];
-};
+  fileSystems."/mnt/media2/photos" = {
+    device = "/dev/disk/by-label/senkloud_photos";
+    fsType = "btrfs";
+    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-timeout=10s" ];
+  };
 
-fileSystems."/mnt/media2/uploads" = {
-  device = "/dev/disk/by-label/senkloud_uploads";
-  fsType = "btrfs";
-  options = [ "rw" "noatime" "compress=zstd" ];
-};
+  fileSystems."/mnt/media2/uploads" = {
+    device = "/dev/disk/by-label/senkloud_uploads";
+    fsType = "btrfs";
+    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-timeout=10s" ];
+  };
 
-fileSystems."/mnt/media" = {
-  device = "/mnt/media2";
-  options = [ "bind" ];
-};
+  # Bind /mnt/media2 to /mnt/media for Senkloud consistency
+  fileSystems."/mnt/media" = {
+    device = "/mnt/media2";
+    options = [ "bind" ];
+  };
 ```
 
 > Note: `fileSystems."/mnt/media"` is a bind mount pointing to `/mnt/media2` for Senkloud compatibility.

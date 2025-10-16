@@ -129,19 +129,19 @@
   fileSystems."/mnt/media2/movies" = {
     device = "/dev/disk/by-label/senkloud_movies";
     fsType = "btrfs";
-    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-ti>
+    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-timeout=10s" ];
   };
 
   fileSystems."/mnt/media2/photos" = {
     device = "/dev/disk/by-label/senkloud_photos";
     fsType = "btrfs";
-    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-ti>
+    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-timeout=10s" ];
   };
 
   fileSystems."/mnt/media2/uploads" = {
     device = "/dev/disk/by-label/senkloud_uploads";
     fsType = "btrfs";
-    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-ti>
+    options = [ "rw" "noatime" "compress=zstd" "noauto" "x-systemd.device-timeout=10s" ];
   };
 
   # Bind /mnt/media2 to /mnt/media for Senkloud consistency

@@ -207,7 +207,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
               <div className="hidden sm:block">
                 <h1 className="text-lg font-bold text-foreground">SenKloud</h1>
-                <div className="text-xs text-muted-foreground">Personal Media Hub</div>
+                <div className="text-xs text-muted-foreground">Home Cloud</div>
               </div>
             </div>
 

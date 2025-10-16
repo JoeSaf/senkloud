@@ -1497,7 +1497,7 @@ def stream_file(filename):
     file_path = None
     file_type = None
     
-    for ftype in ['image', 'video', 'audio']:
+    for ftype in ['image', 'video', 'audio', 'document', 'code', 'archive']:
         media_dir = get_media_path(ftype)
         potential_path = os.path.join(media_dir, filename)
         potential_path = os.path.normpath(potential_path)
@@ -1866,7 +1866,7 @@ def api_files():
     
     files = []
     
-    for file_type in ['image', 'video', 'audio']:
+    for file_type in ['image', 'video', 'audio', 'document', 'code', 'archive']:
         if type_filter and file_type != type_filter:
             continue
             
@@ -1909,7 +1909,8 @@ def api_folders():
     file_type = request.args.get('type', '')
     flat = request.args.get('flat', 'false').lower() == 'true'
     
-    if file_type and file_type in ['image', 'video', 'audio']:
+    # Include document type
+    if file_type and file_type in ['image', 'video', 'audio', 'document', 'code', 'archive']:
         media_dir = get_media_path(file_type)
         if flat:
             folders = get_all_folder_paths(media_dir)
@@ -1919,7 +1920,8 @@ def api_folders():
             return jsonify({file_type: folders})
     else:
         all_folders = {}
-        for ftype in ['image', 'video', 'audio']:
+        # Include all file types
+        for ftype in ['image', 'video', 'audio', 'document', 'code', 'archive']:
             media_dir = get_media_path(ftype)
             if flat:
                 all_folders[ftype] = get_all_folder_paths(media_dir)
