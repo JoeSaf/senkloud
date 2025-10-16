@@ -1497,7 +1497,7 @@ def stream_file(filename):
     file_path = None
     file_type = None
     
-    for ftype in ['image', 'video', 'audio', 'document', 'code', 'archive']:
+    for ftype in ['image', 'video', 'audio']:
         media_dir = get_media_path(ftype)
         potential_path = os.path.join(media_dir, filename)
         potential_path = os.path.normpath(potential_path)
