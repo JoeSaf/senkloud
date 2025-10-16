@@ -11,7 +11,8 @@ import {
   Menu, 
   X,
   Wifi,
-  WifiOff
+  WifiOff,
+  FileText
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
@@ -148,6 +149,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       icon: Home, 
       label: 'Gallery',
       description: 'Browse your media collection'
+    },
+      { 
+    to: '/documents', 
+    icon: FileText, 
+    label: 'Documents',
+    description: 'View your documents'
     },
     { 
       to: '/upload', 

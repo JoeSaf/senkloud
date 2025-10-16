@@ -15,6 +15,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ErrorPage from "./pages/ErrorPage";
 import PlayerPage from "./pages/PlayerPage";
+import Documents from './pages/Documents';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,7 +37,7 @@ const App = () => (
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            
+
             {/* Protected routes */}
             <Route
               path="/"
@@ -48,8 +49,20 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            
-            {/* Fixed folder routing - now it should work properly */}
+
+            {/* Documents page */}
+            <Route
+              path="/documents"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Documents />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Fixed folder routing */}
             <Route
               path="/browse/:type"
               element={
@@ -60,7 +73,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            
+
             {/* Specific folder within type */}
             <Route
               path="/folder/:type/:folder"
@@ -72,7 +85,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            
+
             <Route
               path="/upload"
               element={
@@ -83,6 +96,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+
             <Route
               path="/admin"
               element={
@@ -93,14 +107,17 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-              {/* New dedicated player route - NO Layout wrapper for fullscreen */}
-              <Route 
-              path="/player" 
+
+            {/* Dedicated player route - NO Layout wrapper for fullscreen */}
+            <Route
+              path="/player"
               element={
-              <ProtectedRoute>
-                <PlayerPage />
-              </ProtectedRoute>} />
-              
+                <ProtectedRoute>
+                  <PlayerPage />
+                </ProtectedRoute>
+              }
+            />
+
             {/* Catch-all route */}
             <Route path="*" element={<ErrorPage />} />
           </Routes>
