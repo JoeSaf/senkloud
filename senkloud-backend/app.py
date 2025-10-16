@@ -1866,10 +1866,37 @@ def api_files():
     
     files = []
     
-    for file_type in ['image', 'video', 'audio', 'document', 'code', 'archive']:
+    
+    for file_type in ['image', 'video', 'audio']:
         if type_filter and file_type != type_filter:
             continue
             
+        media_dir = get_media_path(file_type)
+        media_files = scan_media_files(media_dir, folder_filter)
+        
+        for file_data in media_files:
+            files.append({
+                'filename': file_data['filename'],
+                'relative_path': file_data['relative_path'],
+                'folder': file_data['folder'],
+                'type': file_data['type'],
+                'size': file_data['size'],
+                'modified': file_data['modified'].isoformat(),
+                'url': url_for('stream_file', filename=file_data['relative_path'])
+            })
+    
+    return jsonify(files)
+
+@app.route('/api/documents')
+@login_required
+def api_documents():
+    """Special API endpoint for documents only"""
+    folder_filter = request.args.get('folder', '')
+    
+    files = []
+    
+    # Only scan document directories
+    for file_type in ['document']:
         media_dir = get_media_path(file_type)
         media_files = scan_media_files(media_dir, folder_filter)
         
@@ -1910,7 +1937,7 @@ def api_folders():
     flat = request.args.get('flat', 'false').lower() == 'true'
     
     # Include document type
-    if file_type and file_type in ['image', 'video', 'audio', 'document', 'code', 'archive']:
+    if file_type and file_type in ['image', 'video', 'audio']:
         media_dir = get_media_path(file_type)
         if flat:
             folders = get_all_folder_paths(media_dir)
@@ -1921,7 +1948,7 @@ def api_folders():
     else:
         all_folders = {}
         # Include all file types
-        for ftype in ['image', 'video', 'audio', 'document', 'code', 'archive']:
+        for ftype in ['image', 'video', 'audio']:
             media_dir = get_media_path(ftype)
             if flat:
                 all_folders[ftype] = get_all_folder_paths(media_dir)

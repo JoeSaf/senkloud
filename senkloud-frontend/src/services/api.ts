@@ -589,7 +589,9 @@ class ApiService {
 
     return 'document'; // Default fallback
   }
-
+getDocuments(): Promise<ApiResponse<MediaFile[]>> {
+  return this.request('/api/documents');
+}
   // Health check
   async healthCheck(): Promise<ApiResponse> {
     try {

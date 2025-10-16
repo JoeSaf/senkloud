@@ -13,7 +13,7 @@ Senkloud is a personal cloud server for media and documents, built with NixOS, D
 * [Running in Development](#running-in-development)
 * [Deployment](#deployment)
 * [External Storage Setup](/AddingStorage.md)
-* [Troubleshooting](#troubleshooting)
+* [Basic Help](/BasicHelp)
 
 ---
 

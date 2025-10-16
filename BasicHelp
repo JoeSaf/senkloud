@@ -1,3 +1,5 @@
+- these may come in handy when needed:
+
 git pull origin main
 
 docker-compose down

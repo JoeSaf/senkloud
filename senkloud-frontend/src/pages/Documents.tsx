@@ -130,16 +130,16 @@ const Documents: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   // FIXED: Fetch ALL files and filter client-side
-  const { 
-    data: allFilesResponse, 
-    isLoading, 
-    error,
-    refetch 
-  } = useQuery({
-    queryKey: ['all-files-for-documents'],
-    queryFn: () => apiService.getFiles(), // Get ALL files, no type filter
-    refetchOnWindowFocus: false,
-  });
+ const { 
+  data: allFilesResponse, 
+  isLoading, 
+  error,
+  refetch 
+} = useQuery({
+  queryKey: ['documents-only'],
+  queryFn: () => apiService.getDocuments(), // This gets ONLY documents
+  refetchOnWindowFocus: false,
+});
 
   // Transform document data
   const transformDocument = useCallback((file: MediaFile): DocumentItem => {
