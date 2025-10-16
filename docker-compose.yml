@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -9,7 +11,7 @@ services:
       # Jellyfin config and cache
       - jellyfin_config:/config
       - jellyfin_cache:/cache
-      # Media directories - mapped to the same structure as Flask app
+      # Media directories (read-only)
       - /mnt/media:/media:ro
     environment:
       - JELLYFIN_PublishedServerUrl=http://localhost:8096
@@ -20,7 +22,6 @@ services:
       dockerfile: Dockerfile
     container_name: flask-media-manager
     restart: always
-    user: "0:0"  # RUN AS ROOT FOR PERMISSIONS
     ports:
       - "5000:5000"
     volumes:
@@ -38,13 +39,8 @@ services:
       - PYTHONUNBUFFERED=1
     depends_on:
       - jellyfin
-    # Use Flask dev server with proper directory setup
-    command: >
-      bash -c "
-        mkdir -p /mnt/media/Pictures /mnt/media/Movies /mnt/media/Music /mnt/media/Documents /mnt/media/Code /mnt/media/Archives &&
-        chown -R 1000:1000 /mnt/media &&
-        python app.py
-      "
+    # Removed mkdir/chown; expect host to have correct folders/permissions
+    command: python app.py
 
   senkloud-frontend:
     build:
