@@ -29,11 +29,11 @@ interface MediaItem {
   id: string;
   title: string;
   image: string;
+  url: string;
   duration?: string;
   year?: string;
   genre?: string;
   type?: string;
-  url?: string;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
